@@ -16,6 +16,7 @@ type DefaultTx struct {
 	Producer *kafka.Producer
 	Topic    string
 	Logger   *zap.SugaredLogger
+	Confirm  func(context.Context) error
 }
 
 type TxMessage struct {
@@ -37,7 +38,7 @@ func NewDefaultTx(servers []string, topic string, logger *zap.SugaredLogger, add
 		return nil, err
 	}
 
-	return &DefaultTx{Producer: producer, Topic: topic, Logger: logger}, nil
+	return &DefaultTx{Producer: producer, Topic: topic, Confirm: DefaultTxConfirm(producer, logger)}, nil
 }
 
 func (t *DefaultTx) Close() {
@@ -62,32 +63,38 @@ func (t *DefaultTx) Send(ctx context.Context, msg *TxMessage) error {
 
 	select {
 	case t.Producer.ProduceChannel() <- message:
+		return t.Confirm(ctx)
 	case <-ctx.Done():
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-	}
 
-	return nil
+		return nil
+	}
 }
 
-func (t *DefaultTx) Confirm(ctx context.Context) error {
-L:
-	for {
-		select {
-		case ev := <-t.Producer.Events():
-			switch e := ev.(type) {
+func DefaultTxConfirm(producer *kafka.Producer, logger *zap.SugaredLogger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		for {
+			select {
+			case ev := <-producer.Events():
+				switch event := ev.(type) {
+				case *kafka.Error:
+					return event
 				case *kafka.Message:
-					if e.TopicPartition
-			}
-		case <-ctx.Done():
-			if err := ctx.Err(); err != nil {
-				return err
-			}
+					if event.TopicPartition.Error != nil {
+						return event.TopicPartition.Error
+					}
 
-			break L
+					return nil
+				default:
+					logger.Info(zap.Stringer("event", ev))
+				}
+			case <-ctx.Done():
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
 		}
 	}
-
-	return nil
 }
