@@ -15,7 +15,6 @@ type Tx interface {
 type DefaultTx struct {
 	Producer *kafka.Producer
 	Topic    string
-	Logger   *zap.SugaredLogger
 	Confirm  func(context.Context) error
 }
 
