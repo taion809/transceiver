@@ -41,7 +41,7 @@ const (
 	defaultGroupID = "g1"
 
 	// Default timeout in milliseconds
-	defaultSessionTimeout = 600
+	defaultSessionTimeout = 6000
 )
 
 var (
